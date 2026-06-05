@@ -1,0 +1,162 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==================== HELPERS ====================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isRole(role) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    
+    function isPecuarista() {
+      return isRole('Pecuarista');
+    }
+    
+    function isSupervisor() {
+      return isRole('Supervisor_Tecnico');
+    }
+    
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getFazendaDoc(fazendaId) {
+      return get(/databases/$(database)/documents/fazendas/$(fazendaId)).data;
+    }
+    
+    function getPiqueteDoc(piqueteId) {
+      return get(/databases/$(database)/documents/piquetes/$(piqueteId)).data;
+    }
+    
+    function userIsPropietario(fazendaId) {
+      return getFazendaDoc(fazendaId).proprietario_id == request.auth.uid;
+    }
+    
+    function userIsSupervisorAssigned(fazendaId) {
+      return request.auth.uid in getFazendaDoc(fazendaId).supervisores;
+    }
+    
+    // ==================== USERS COLLECTION ====================
+    match /users/{userId} {
+      // Usuário lê seus próprios dados
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Apenas Admin (via Custom Claims) ou próprio usuário atualiza dados básicos
+      allow update: if isAuthenticated() && request.auth.uid == userId &&
+                       !('role' in request.resource.data) &&
+                       !('cpf' in request.resource.data);
+      
+      // Criar novo usuário - apenas via Custom Claims (Admin)
+      allow create: if false;
+    }
+    
+    // ==================== FAZENDAS COLLECTION ====================
+    match /fazendas/{fazendaId} {
+      
+      // Pecuarista lê apenas suas próprias fazendas
+      allow read: if isAuthenticated() && isPecuarista() &&
+                     request.auth.uid in resource.data.proprietario_id;
+      
+      // Supervisor lê apenas fazendas onde foi atribuído
+      allow read: if isAuthenticated() && isSupervisor() &&
+                     request.auth.uid in resource.data.supervisores;
+      
+      // Pecuarista cria fazendas (proprietario_id = auth.uid automaticamente)
+      allow create: if isAuthenticated() && isPecuarista() &&
+                       request.resource.data.proprietario_id == request.auth.uid;
+      
+      // Pecuarista atualiza apenas suas fazendas
+      allow update: if isAuthenticated() && isPecuarista() &&
+                       userIsPropietario(fazendaId) &&
+                       resource.data.proprietario_id == request.resource.data.proprietario_id;
+      
+      // Nested: Piquetes
+      match /piquetes/{piqueteId} {
+        allow read: if isAuthenticated() && (
+          (isPecuarista() && userIsPropietario(fazendaId)) ||
+          (isSupervisor() && userIsSupervisorAssigned(fazendaId))
+        );
+        
+        allow create: if isAuthenticated() && isPecuarista() &&
+                         userIsPropietario(fazendaId);
+        
+        allow update: if isAuthenticated() && (
+          (isPecuarista() && userIsPropietario(fazendaId)) ||
+          (isSupervisor() && userIsSupervisorAssigned(fazendaId))
+        );
+      }
+      
+      // Nested: Laudos Solo
+      match /laudos_solo/{laudoId} {
+        allow read: if isAuthenticated() && (
+          (isPecuarista() && userIsPropietario(fazendaId)) ||
+          (isSupervisor() && userIsSupervisorAssigned(fazendaId))
+        );
+        
+        // Supervisor escreve laudos
+        allow create: if isAuthenticated() && isSupervisor() &&
+                         userIsSupervisorAssigned(fazendaId) &&
+                         request.resource.data.supervisor_id == request.auth.uid;
+        
+        allow update: if isAuthenticated() && isSupervisor() &&
+                         userIsSupervisorAssigned(fazendaId) &&
+                         resource.data.supervisor_id == request.auth.uid;
+      }
+      
+      // Nested: Histórico Recomendações
+      match /historico_recomendacoes/{recomendacaoId} {
+        allow read: if isAuthenticated() && (
+          (isPecuarista() && userIsPropietario(fazendaId)) ||
+          (isSupervisor() && userIsSupervisorAssigned(fazendaId))
+        );
+        
+        allow create: if isAuthenticated() && isSupervisor() &&
+                         userIsSupervisorAssigned(fazendaId) &&
+                         request.resource.data.supervisor_id == request.auth.uid;
+        
+        allow update: if isAuthenticated() && isSupervisor() &&
+                         userIsSupervisorAssigned(fazendaId);
+      }
+    }
+    
+    // ==================== LAUDOS SOLO (root level) ====================
+    match /laudos_solo/{laudoId} {
+      allow read: if isAuthenticated() && (
+        (isPecuarista() && request.auth.uid in 
+          get(/databases/$(database)/documents/fazendas/$(resource.data.fazenda_id)).data.proprietario_id) ||
+        (isSupervisor() && request.auth.uid in 
+          get(/databases/$(database)/documents/fazendas/$(resource.data.fazenda_id)).data.supervisores)
+      );
+      
+      allow create: if isAuthenticated() && isSupervisor() &&
+                       request.resource.data.supervisor_id == request.auth.uid;
+    }
+    
+    // ==================== HISTORICO RECOMENDACOES (root level) ====================
+    match /historico_recomendacoes/{recomendacaoId} {
+      allow read: if isAuthenticated() && (
+        (isPecuarista() && request.auth.uid in 
+          get(/databases/$(database)/documents/fazendas/$(resource.data.fazenda_id)).data.proprietario_id) ||
+        (isSupervisor() && request.auth.uid in 
+          get(/databases/$(database)/documents/fazendas/$(resource.data.fazenda_id)).data.supervisores)
+      );
+      
+      allow create: if isAuthenticated() && isSupervisor();
+      allow update: if isAuthenticated() && isSupervisor();
+    }
+    
+    // ==================== LOGS AUDITORIA ====================
+    match /logs_auditoria/{logId} {
+      // Apenas o próprio usuário lê seus logs (Auditoria será acessada via Admin)
+      allow read, write: if false;
+    }
+    
+    // ==================== DEFAULT DENY ====================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

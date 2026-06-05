@@ -1,0 +1,27 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "cloud-functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "*-debug.log",
+        ".env",
+        "venv"
+      ],
+      "runtime": "python311"
+    }
+  ],
+  "storage": [
+    {
+      "bucket": "regenerative-pasture.appspot.com",
+      "rules": "storage.rules"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "bioma": "Cerrado",
+  "region": "Centro-Oeste Brasil",
+  "constantes": {
+    "estande_gatilho_recuperacao_pct": 50,
+    "peso_vivo_ua_kg": 450,
+    "consumo_diario_ua_ms_kg": 11.25,
+    "residuo_minimo_seguranca_pct": 20,
+    "preco_boi_ua_reais": 3000,
+    "custo_hora_trator_reais": 450
+  },
+  "ndvi_limites": {
+    "critico": 0.30,
+    "pobre": 0.45,
+    "regular": 0.60,
+    "bom": 0.75,
+    "excelente": 1.0
+  },
+  "forrageiras_padrao": [
+    "Brachiaria decumbens",
+    "Brachiaria brizantha cv. Marandu",
+    "Panicum maximum cv. Mombaça",
+    "Cynodon dactylon"
+  ]
+}
